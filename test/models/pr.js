@@ -119,5 +119,155 @@ const BODY = `* Extract legacy callback interface objects
         pr.config = { type: "Bikeshed" };
         assert.equal(pr.processor, "bikeshed");
     });
+
+    test("checkForChanges detects commit changes", function(done) {
+        let pr = new PR("heycam/webidl/283", { id: 234 });
+        pr.payload = {
+            head: { sha: "abc123" },
+            body: "Original body"
+        };
+
+        // Mock the request method to simulate fresh API response with new commit
+        pr.request = function() {
+            return Promise.resolve({
+                head: { sha: "def456" },
+                body: "Original body"
+            });
+        };
+
+        pr.checkForChanges().then(changeInfo => {
+            assert.equal(changeInfo.hasCommitChanges, true);
+            assert.equal(changeInfo.hasBodyChanges, false);
+            assert.equal(changeInfo.initialHeadSha, "abc123");
+            assert.equal(changeInfo.currentHeadSha, "def456");
+            done();
+        }).catch(done);
+    });
+
+    test("checkForChanges detects body changes", function(done) {
+        let pr = new PR("heycam/webidl/283", { id: 234 });
+        pr.payload = {
+            head: { sha: "abc123" },
+            body: "Original body"
+        };
+
+        // Mock the request method to simulate fresh API response with edited body
+        pr.request = function() {
+            return Promise.resolve({
+                head: { sha: "abc123" },
+                body: "Updated body content"
+            });
+        };
+
+        pr.checkForChanges().then(changeInfo => {
+            assert.equal(changeInfo.hasCommitChanges, false);
+            assert.equal(changeInfo.hasBodyChanges, true);
+            assert.equal(changeInfo.initialBody, "Original body");
+            assert.equal(changeInfo.currentBody, "Updated body content");
+            done();
+        }).catch(done);
+    });
+
+    test("checkForChanges detects no changes", function(done) {
+        let pr = new PR("heycam/webidl/283", { id: 234 });
+        pr.payload = {
+            head: { sha: "abc123" },
+            body: "Same body"
+        };
+
+        // Mock the request method to simulate no changes
+        pr.request = function() {
+            return Promise.resolve({
+                head: { sha: "abc123" },
+                body: "Same body"
+            });
+        };
+
+        pr.checkForChanges().then(changeInfo => {
+            assert.equal(changeInfo.hasCommitChanges, false);
+            assert.equal(changeInfo.hasBodyChanges, false);
+            done();
+        }).catch(done);
+    });
+
+    test("updateBody sets requeue flag when commits change", function(done) {
+        const Controller = require("../../lib/controller");
+        let controller = new Controller();
+
+        // Create a mock PR
+        let pr = new PR("heycam/webidl/283", { id: 234 });
+        pr.payload = {
+            head: { sha: "abc123" },
+            body: "Original body"
+        };
+        pr.config = { type: "respec" };
+
+        // Mock all the methods we need
+        pr.cacheAll = () => Promise.resolve();
+        pr.checkForChanges = () => Promise.resolve({
+            hasCommitChanges: true,
+            hasBodyChanges: false,
+            initialHeadSha: "abc123",
+            currentHeadSha: "def456"
+        });
+
+        let job = {
+            id: "heycam/webidl/283",
+            installation_id: 234,
+            forcedUpdate: false
+        };
+
+        // Mock needsUpdate to return true
+        controller.needsUpdate = () => true;
+
+        controller.updateBody(pr, job).then(updateResult => {
+            // This should not be reached when commits change during build
+            done(new Error("Expected updateBody to throw an error"));
+        }).catch(error => {
+            // The error should be thrown when commits change during build
+            assert.equal(error.message, "New commits pushed during build");
+            assert.equal(error.aborted, true);
+            assert.equal(error.requeue, true);
+            done();
+        });
+    });
+
+
+    test("aborted errors are not reported as user-facing errors", function(done) {
+        const Controller = require("../../lib/controller");
+        let controller = new Controller();
+
+        // Create a mock PR
+        let pr = new PR("heycam/webidl/283", { id: 234 });
+        pr.payload = {
+            head: { sha: "abc123" },
+            body: "Original body",
+            merged: false
+        };
+        pr.config = { type: "respec" };
+        pr.touchesSrcFile = () => true;
+        pr.requiresPreview = () => true;
+
+        // Create a result with an aborted error
+        let result = {
+            id: "heycam/webidl/283",
+            installation_id: 234,
+            error: new Error("New commits pushed during build"),
+            forcedUpdate: false
+        };
+        result.error.aborted = true;
+
+        // Set NODE_ENV to production to enable error reporting
+        const originalEnv = process.env.NODE_ENV;
+        process.env.NODE_ENV = "production";
+
+        // Test shouldReportError - it should return false for aborted errors
+        let shouldReport = controller.shouldReportError(pr, result, result.error);
+        assert.equal(shouldReport, false, "Aborted errors should not be reported");
+
+        // Restore original environment
+        process.env.NODE_ENV = originalEnv;
+        done();
+    });
 });
 
