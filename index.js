@@ -8,16 +8,18 @@ if (process.env.NODE_ENV === "dev") {
 const createApp = require("./lib/app"),
     Controller = require("./lib/controller"),
     createLogger = require("./lib/logger"),
-    { parseStartupQueue, processStartupQueue } = require("./lib/startup-queue");
-
-const controller = new Controller();
+    { parseStartupQueue, processStartupQueue } = require("./lib/startup-queue"),
+    { parseAllowedOrgs } = require("./lib/allowed-orgs");
 
 var config = {
     githubSecret: process.env.GITHUB_SECRET,
     port: process.env.PORT || 5000,
     nodeEnv: process.env.NODE_ENV,
-    displayStackTraces: process.env.DISPLAY_STACK_TRACES === "yes"
+    displayStackTraces: process.env.DISPLAY_STACK_TRACES === "yes",
+    allowedOrgs: parseAllowedOrgs(process.env.ALLOWED_ORGS)
 };
+
+const controller = new Controller({ allowedOrgs: config.allowedOrgs });
 
 const { logArgs, logResult } = createLogger(config);
 

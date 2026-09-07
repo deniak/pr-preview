@@ -125,4 +125,81 @@ suite('Server', () => {
                 done(err);
             });
     });
+
+    test('should ignore pull requests from organizations which are not allowed', (done) => {
+        const controller = new Controller({ allowedOrgs: ['w3c'] });
+        const config = { githubSecret: 'test-secret', nodeEnv: 'development' };
+        const app = createApp(controller, config);
+
+        request(app)
+            .post('/github-hook')
+            .send({
+                action: 'opened',
+                number: 123,
+                installation: { id: 'test-installation' },
+                pull_request: {
+                    base: {
+                        repo: {
+                            full_name: 'not-allowed/repo'
+                        }
+                    }
+                },
+                sender: {
+                    login: 'testuser'
+                }
+            })
+            .expect(200)
+            .end((err) => {
+                assert.strictEqual(controller.queue.length, 0, 'Job should not have been queued');
+                done(err);
+            });
+    });
+
+    test('should process pull requests from allowed organizations', (done) => {
+        const controller = new Controller({ allowedOrgs: ['w3c'] });
+        const config = { githubSecret: 'test-secret', nodeEnv: 'development' };
+        const app = createApp(controller, config);
+
+        // Prevent the queue from being processed so we can inspect it.
+        controller.processQueue = () => {};
+
+        request(app)
+            .post('/github-hook')
+            .send({
+                action: 'opened',
+                number: 123,
+                installation: { id: 'test-installation' },
+                pull_request: {
+                    base: {
+                        repo: {
+                            full_name: 'W3C/repo'
+                        }
+                    }
+                },
+                sender: {
+                    login: 'testuser'
+                }
+            })
+            .expect(200)
+            .end((err) => {
+                assert.strictEqual(controller.queue.length, 1, 'Job should have been queued');
+                done(err);
+            });
+    });
+
+    test('should reject config requests for organizations which are not allowed', (done) => {
+        const controller = new Controller({ allowedOrgs: ['w3c'] });
+        const config = { githubSecret: 'test-secret', nodeEnv: 'development' };
+        const app = createApp(controller, config);
+
+        request(app)
+            .post('/config')
+            .type('form')
+            .send({ owner: 'not-allowed', repo: 'repo', config: '{}', validate: '1' })
+            .expect(403)
+            .expect(res => {
+                assert.match(res.body.error, /not enabled for not-allowed/);
+            })
+            .end(done);
+    });
 });
