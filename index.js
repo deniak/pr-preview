@@ -7,7 +7,7 @@ if (process.env.NODE_ENV === "dev") {
 
 const createApp = require("./lib/app"),
     Controller = require("./lib/controller"),
-    createLogger = require("./lib/logger"),
+    { logger }= require("./lib/logger"),
     { parseStartupQueue, processStartupQueue } = require("./lib/startup-queue"),
     { parseAllowedOrgs } = require("./lib/allowed-orgs");
 
@@ -19,20 +19,18 @@ var config = {
     allowedOrgs: parseAllowedOrgs(process.env.ALLOWED_ORGS)
 };
 
-const logger = createLogger(config);
 const controller = new Controller({ allowedOrgs: config.allowedOrgs, logger });
 
 const queue = parseStartupQueue(process.env.STARTUP_QUEUE, logger);
 if (queue) {
     processStartupQueue(queue, controller, logger).catch(error => {
-        logger.log("Unexpected error during startup queue processing");
-        logger.logError(error, "    ");
+        logger.error({ err: error }, "Unexpected error during startup queue processing");
     });
 }
 
 var app = createApp(controller, config, logger);
 var port = config.port;
 app.listen(port, function() {
-    logger.log("Express server listening on port %d in %s mode", port, app.settings.env);
-    logger.log("App started in", (Date.now() - t0) + "ms.");
+    logger.info("Express server listening on port %d in %s mode", port, app.settings.env);
+    logger.info("App started in %dms.", Date.now() - t0);
 });
