@@ -32,7 +32,7 @@
     "entities": "2.0.1",
     "express": "^4.16.4",
     "@snyk/express-x-hub": "^1.2.0",
-    "jsonwebtoken": "^8.5.1",
+    "jsonwebtoken": "^9.0.3",
     "mkdirp-promise": "^5.0.1",
     "mustache": "3.2.0",
     "request": "^2.88.0",
